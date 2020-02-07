@@ -31,7 +31,8 @@ class ViewController: UIViewController {
     // MARK:- UI Element Outlets and handles
     
     // `VideoView` created from a storyboard
-    @IBOutlet weak var previewView: VideoView!
+    @IBOutlet weak var previewViewContainer: VideoView!
+    private var previewView: VideoView?
 
     @IBOutlet weak var connectButton: UIButton!
     @IBOutlet weak var disconnectButton: UIButton!
@@ -39,7 +40,7 @@ class ViewController: UIViewController {
     @IBOutlet weak var roomTextField: UITextField!
     @IBOutlet weak var roomLine: UIView!
     @IBOutlet weak var roomLabel: UILabel!
-    @IBOutlet weak var micButton: UIButton!
+    @IBOutlet weak var startCameraButton: UIButton!
 
     // MARK:- UIViewController
     override func viewDidLoad() {
@@ -48,21 +49,10 @@ class ViewController: UIViewController {
         self.title = "QuickStart"
         self.messageLabel.adjustsFontSizeToFitWidth = true;
         self.messageLabel.minimumScaleFactor = 0.75;
-
-        if PlatformUtils.isSimulator {
-            self.previewView.removeFromSuperview()
-        } else {
-            // Preview our local camera track in the local video preview view.
-            self.startPreview()
-        }
-        
-        // Disconnect and mic button will be displayed when the Client is connected to a Room.
-        self.disconnectButton.isHidden = true
-        self.micButton.isHidden = true
         
         self.roomTextField.autocapitalizationType = .none
         self.roomTextField.delegate = self
-        
+
         let tap = UITapGestureRecognizer(target: self, action: #selector(ViewController.dismissKeyboard))
         self.view.addGestureRecognizer(tap)
     }
@@ -174,21 +164,13 @@ class ViewController: UIViewController {
     }
     
     @IBAction func disconnect(sender: AnyObject) {
-        self.room!.disconnect()
-        logMessage(messageText: "Attempting to disconnect from room \(room!.name)")
+        self.room?.disconnect()
+        stopPreview()
+        logMessage(messageText: "Attempting to disconnect from room \(room?.name)")
     }
     
-    @IBAction func toggleMic(sender: AnyObject) {
-        if (self.localAudioTrack != nil) {
-            self.localAudioTrack?.isEnabled = !(self.localAudioTrack?.isEnabled)!
-            
-            // Update the button title
-            if (self.localAudioTrack?.isEnabled == true) {
-                self.micButton.setTitle("Mute", for: .normal)
-            } else {
-                self.micButton.setTitle("Unmute", for: .normal)
-            }
-        }
+    @IBAction func startCameraPressed(sender: AnyObject) {
+        startPreview()
     }
 
     // MARK:- Private
@@ -199,6 +181,14 @@ class ViewController: UIViewController {
 
         let frontCamera = CameraSource.captureDevice(position: .front)
         let backCamera = CameraSource.captureDevice(position: .back)
+
+        previewView = VideoView()
+        guard let previewView = previewView else {
+            return
+        }
+
+        previewViewContainer.addSubview(previewView)
+        previewView.frame = previewViewContainer.bounds
 
         if (frontCamera != nil || backCamera != nil) {
 
@@ -217,26 +207,31 @@ class ViewController: UIViewController {
             localVideoTrack = LocalVideoTrack(source: camera!, enabled: true, name: "Camera")
 
             // Add renderer to video track for local preview
-            localVideoTrack!.addRenderer(self.previewView)
+            localVideoTrack!.addRenderer(previewView)
             logMessage(messageText: "Video track created")
 
             if (frontCamera != nil && backCamera != nil) {
                 // We will flip camera on tap.
                 let tap = UITapGestureRecognizer(target: self, action: #selector(ViewController.flipCamera))
-                self.previewView.addGestureRecognizer(tap)
+                previewView.addGestureRecognizer(tap)
             }
 
             camera!.startCapture(device: frontCamera != nil ? frontCamera! : backCamera!) { (captureDevice, videoFormat, error) in
                 if let error = error {
                     self.logMessage(messageText: "Capture failed with error.\ncode = \((error as NSError).code) error = \(error.localizedDescription)")
                 } else {
-                    self.previewView.shouldMirror = (captureDevice.position == .front)
+                    previewView.shouldMirror = (captureDevice.position == .front)
                 }
             }
         }
         else {
             self.logMessage(messageText:"No front or back capture device found!")
         }
+    }
+
+    func stopPreview() {
+        previewView?.removeFromSuperview()
+        previewView = nil
     }
 
     @objc func flipCamera() {
@@ -254,7 +249,7 @@ class ViewController: UIViewController {
                     if let error = error {
                         self.logMessage(messageText: "Error selecting capture device.\ncode = \((error as NSError).code) error = \(error.localizedDescription)")
                     } else {
-                        self.previewView.shouldMirror = (captureDevice.position == .front)
+                        self.previewView?.shouldMirror = (captureDevice.position == .front)
                     }
                 }
             }
@@ -286,7 +281,6 @@ class ViewController: UIViewController {
         self.roomTextField.isHidden = inRoom
         self.roomLine.isHidden = inRoom
         self.roomLabel.isHidden = inRoom
-        self.micButton.isHidden = !inRoom
         self.disconnectButton.isHidden = !inRoom
         self.navigationController?.setNavigationBarHidden(inRoom, animated: true)
         UIApplication.shared.isIdleTimerDisabled = inRoom
